@@ -32,6 +32,7 @@ endif()
 option(LLAMA_AVX512_FANCY_SIMD               "llama: enable AVX512-VL, AVX512-BW, AVX512-DQ, AVX512-VNNI"                        OFF)
 option(KTRANSFORMERS_USE_CUDA                "ktransformers: use CUDA"                          OFF)
 option(KTRANSFORMERS_USE_MUSA                "ktransformers: use MUSA"                          OFF)
+option(KTRANSFORMERS_USE_HIP                 "ktransformers: use HIP"                           OFF)
 
 # Architecture specific
 # TODO: probably these flags need to be tweaked on some architectures
@@ -237,6 +238,33 @@ elseif (UNIX)
             add_compile_definitions(KTRANSFORMERS_USE_MUSA=1)
         endif()
     endif()
+
+    if (KTRANSFORMERS_USE_HIP)
+        if (NOT EXISTS $ENV{ROCM_PATH})
+            if (NOT EXISTS /opt/rocm)
+                set(ROCM_PATH /usr)
+            else()
+                set(ROCM_PATH /opt/rocm)
+            endif()
+        else()
+            set(ROCM_PATH $ENV{ROCM_PATH})
+        endif()
+
+        set(CMAKE_CXX_COMPILER "/opt/rocm/llvm/bin/clang++")
+        set(CMAKE_C_COMPILER "/opt/rocm/llvm/bin/clang")
+        add_compile_definitions(__HIP_PLATFORM_AMD__=1)
+
+        list(APPEND CMAKE_PREFIX_PATH  ${ROCM_PATH})
+        list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}/lib64/cmake")
+
+        find_package(HIP)
+        if(HIP_FOUND)
+            message(STATUS "ROCm found")
+            include_directories("${HIP_INCLUDE_DIRS}")
+            add_compile_definitions(KTRANSFORMERS_USE_HIP=1)
+        endif()
+    endif()
+
 endif()
 
 aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR} SOURCE_DIR1)
@@ -260,6 +288,9 @@ elseif(UNIX)
     endif()
     if(KTRANSFORMERS_USE_MUSA)
         target_link_libraries(${PROJECT_NAME} PRIVATE MUSA::musart)
+    endif()
+    if(KTRANSFORMERS_USE_HIP)
+        target_link_libraries(${PROJECT_NAME} PRIVATE "${ROCM_PATH}/lib/libamdhip64.so")
     endif()
 endif()
 

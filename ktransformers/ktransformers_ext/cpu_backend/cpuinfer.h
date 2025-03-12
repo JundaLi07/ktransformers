@@ -21,6 +21,8 @@
 #include "vendors/cuda.h"
 #elif KTRANSFORMERS_USE_MUSA
 #include "vendors/musa.h"
+#elif KTRANSFORMERS_USE_HIP
+#include "vendors/hip.h"
 #endif
 
 #include "backend.h"

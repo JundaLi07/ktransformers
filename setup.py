@@ -36,6 +36,11 @@ try:
 except ImportError:
     MUSA_HOME=None
 
+try:
+    from torch.utils.cpp_extension import ROCM_HOME
+except ImportError:
+    ROCM_HOME=None
+
 class CpuInstructInfo:
     CPU_INSTRUCT = os.getenv("CPU_INSTRUCT", "NATIVE")
     FANCY = "FANCY"
@@ -77,6 +82,21 @@ class VersionInfo:
         torch_cuda_version = parse(torch.version.cuda)
         cuda_version = f"{torch_cuda_version.major}{torch_cuda_version.minor}"
         return cuda_version
+    
+    def get_rocm_bare_metal_version(self, rocm_dir):
+        raw_output = subprocess.check_output(
+            [rocm_dir + "/bin/hipcc", "--version"], universal_newlines=True)
+        output = raw_output.split()
+        release_idx = output.index("HIP") + 2
+        bare_metal_version = parse(output[release_idx].split("-")[0])
+        rocm_version = f"{bare_metal_version.major}{bare_metal_version.minor}"
+        return rocm_version
+    
+    def get_rocm_version_of_torch():
+        torch_rocm_version = parse(torch.version.hip.split("-")[0])
+        rocm_version = f"{torch_rocm_version.major}{torch_rocm_version.minor}"
+        return rocm_version
+
 
     def get_platform(self,):
         """
@@ -151,8 +171,10 @@ class VersionInfo:
             backend_version = f"cu{self.get_cuda_bare_metal_version(CUDA_HOME)}"
         elif MUSA_HOME is not None:
             backend_version = f"mu{self.get_musa_bare_metal_version(MUSA_HOME)}"
+        elif ROCM_HOME is not None:
+            backend_version = f"rocm{self.get_rocm_bare_metal_version(ROCM_HOME)}"
         else:
-            raise ValueError("Unsupported backend: CUDA_HOME and MUSA_HOME are not set.")
+            raise ValueError("Unsupported backend: CUDA_HOME, MUSA_HOME and HIP_HOME are not set.")
         package_version = f"{flash_version}+{backend_version}torch{torch_version}{cpu_instruct}"
         if full_version:
             return package_version
@@ -247,8 +269,10 @@ class CMakeBuild(BuildExtension):
             cmake_args += ["-DKTRANSFORMERS_USE_CUDA=ON"]
         elif MUSA_HOME is not None:
             cmake_args += ["-DKTRANSFORMERS_USE_MUSA=ON"]
+        elif ROCM_HOME is not None:
+            cmake_args += ["-DKTRANSFORMERS_USE_HIP=ON"]
         else:
-            raise ValueError("Unsupported backend: CUDA_HOME and MUSA_HOME are not set.")
+            raise ValueError("Unsupported backend: CUDA_HOME, MUSA_HOME and ROCM_HOME are not set.")
 
         build_args = []
         if "CMAKE_ARGS" in os.environ:
@@ -367,8 +391,24 @@ elif MUSA_HOME is not None:
             ]
         }
     )
+elif ROCM_HOME is not None:
+    ops_module = CUDAExtension('KTransformersOps', [
+        'ktransformers/ktransformers_ext/cuda/custom_gguf/dequant.cu',
+        'ktransformers/ktransformers_ext/cuda/binding.cpp',
+        'ktransformers/ktransformers_ext/cuda/gptq_marlin/gptq_marlin.cu'
+    ],
+    extra_compile_args={
+            'cxx': ['-O3', '-DKTRANSFORMERS_USE_HIP'],
+            'nvcc': [
+                '-O3',
+                '-Xcompiler', '-fPIC',
+                '-DKTRANSFORMERS_USE_HIP',
+            ]
+        }
+    )
+
 else:
-    raise ValueError("Unsupported backend: CUDA_HOME and MUSA_HOME are not set.")
+    raise ValueError("Unsupported backend: CUDA_HOME,MUSA_HOME and ROCM_HOME are not set.")
 
 setup(
     version=VersionInfo().get_package_version(),

@@ -7,7 +7,10 @@
 #include "gptq_marlin.cuh"
 #include <cuda_fp16.h>
 #include <cuda_bf16.h>
-
+#ifdef __HIP_PLATFORM_AMD__
+typedef __hip_bfloat16 nv_bfloat16;
+typedef __hip_bfloat162 nv_bfloat162;
+#endif
 namespace gptq_marlin {
 
 template <typename scalar_t>
